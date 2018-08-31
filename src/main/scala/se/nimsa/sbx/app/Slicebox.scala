@@ -16,7 +16,8 @@
 
 package se.nimsa.sbx.app
 
-import java.nio.file.Paths
+import java.nio.file.{NoSuchFileException, Paths}
+import java.security.{PrivateKey, PublicKey}
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit.MILLISECONDS
 
@@ -138,7 +139,23 @@ trait SliceboxBase extends SliceboxRoutes with DicomStreamOps with JsonFormats w
   val storageService: ActorRef = system.actorOf(StorageServiceActor.props(storage), name = "StorageService")
   val anonymizationService: ActorRef = {
     val purgeEmptyAnonymizationKeys = sliceboxConfig.getBoolean("anonymization.purge-empty-keys")
-    system.actorOf(AnonymizationServiceActor.props(anonymizationDao, purgeEmptyAnonymizationKeys), name = "AnonymizationService")
+    var encryptionMode = sliceboxConfig.getBoolean("anonymization.encryption")
+    var publicKey
+    var privateKey
+    if (encryptionMode) {
+      try {
+        publicKey: PublicKey = KeyReader.PublicKeyReader(sliceboxConfig.getString("anonymization.public-key-path"))
+        privateKey: PrivateKey = KeyReader.PrivateKeyReader(sliceboxConfig.getString("anonymization.private-key-path"))
+      }
+      catch {
+        case e: NoSuchFileException =>
+          ecnryptionMode = false
+      }
+    }
+    if (ecnryptionMode)
+      system.actorOf(AnonymizationServiceActor.props(anonymizationDao, purgeEmptyAnonymizationKeys, publicKey, privateKey), name = "AnonymizationService")
+    else
+      system.actorOf(AnonymizationServiceActor.props(anonymizationDao, purgeEmptyAnonymizationKeys), name = "AnonymizationService")
   }
   val boxService: ActorRef = system.actorOf(BoxServiceActor.props(boxDao, apiBaseURL, storage), name = "BoxService")
   val scpService: ActorRef = system.actorOf(ScpServiceActor.props(scpDao, storage), name = "ScpService")

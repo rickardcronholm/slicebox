@@ -23,10 +23,11 @@ import se.nimsa.dicom.data.Tag
 import se.nimsa.sbx.anonymization.AnonymizationProtocol._
 import se.nimsa.sbx.app.GeneralProtocol.ImagesDeleted
 import se.nimsa.sbx.util.SequentialPipeToSupport
+import java.security.{PrivateKey, PublicKey}
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class AnonymizationServiceActor(anonymizationDao: AnonymizationDAO, purgeEmptyAnonymizationKeys: Boolean)
+class AnonymizationServiceActor(anonymizationDao: AnonymizationDAO, purgeEmptyAnonymizationKeys: Boolean, publicKey: Option[PublicKey] = None, privateKey: Option[PrivateKey] = None)
                                (implicit ec: ExecutionContext) extends Actor with Stash with SequentialPipeToSupport {
 
   import AnonymizationUtil._
@@ -144,4 +145,5 @@ class AnonymizationServiceActor(anonymizationDao: AnonymizationDAO, purgeEmptyAn
 
 object AnonymizationServiceActor {
   def props(anonymizationDao: AnonymizationDAO, purgeEmptyAnonymizationKeys: Boolean)(implicit ec: ExecutionContext): Props = Props(new AnonymizationServiceActor(anonymizationDao, purgeEmptyAnonymizationKeys))
+  def props(anonymizationDao: AnonymizationDAO, purgeEmptyAnonymizationKeys: Boolean, publicKey: PublicKey, privateKey: PrivateKey)(implicit ec: ExecutionContext): Props = Props(new AnonymizationServiceActor(anonymizationDao, purgeEmptyAnonymizationKeys, Option(publicKey), Option(privateKey)))
 }
