@@ -19,6 +19,7 @@ package se.nimsa.sbx.dicom.streams
 import akka.NotUsed
 import akka.stream.scaladsl.Flow
 import akka.util.ByteString
+import com.typesafe.config.{Config, ConfigFactory}
 import se.nimsa.dicom.streams.DicomFlows._
 import se.nimsa.dicom.data.DicomParsing.isPrivate
 import se.nimsa.dicom.data.DicomParts.DicomPart
@@ -27,6 +28,10 @@ import se.nimsa.dicom.data.{Tag, TagPath, VR}
 import se.nimsa.sbx.anonymization.AnonymizationUtil._
 import se.nimsa.sbx.dicom.DicomUtil._
 import se.nimsa.sbx.dicom.streams.DicomStreamUtil._
+import scala.reflect.runtime.universe
+
+
+import scala.collection.JavaConverters._
 
 object AnonymizationFlow {
 
@@ -34,6 +39,9 @@ object AnonymizationFlow {
   private def insert(tag: Int, mod: ByteString => ByteString) = TagModification.endsWith(TagPath.fromTag(tag), mod, insert = true)
   private def modify(tag: Int, mod: ByteString => ByteString) = TagModification.endsWith(TagPath.fromTag(tag), mod, insert = false)
   private def clear(tag: Int) = TagModification.endsWith(TagPath.fromTag(tag), _ => ByteString.empty, insert = false)
+
+  val appConfig: Config  = ConfigFactory.load()
+  val sliceboxConfig: Config = appConfig.getConfig("slicebox")
 
   private val removeTags = Set(
     Tag.AcquisitionComments,
@@ -203,6 +211,8 @@ object AnonymizationFlow {
     Tag.VisitComments
   )
 
+  val keepTags : Seq[Int] = Option(sliceboxConfig.getIntList("anonymization.keep-tags").asScala).getOrElse(Seq.empty).map {_.toInt}
+
   /**
     * From standard PS3.15 Table E.1-1
     * Remove all private attributes
@@ -216,7 +226,7 @@ object AnonymizationFlow {
       .via(toUtf8Flow)
       .via(tagFilter(_ => true)(tagPath =>
         !tagPath.toList.map(_.tag).exists(tag =>
-          isPrivate(tag) || isOverlay(tag) || removeTags.contains(tag)))) // remove private, overlay and PHI attributes
+          (isPrivate(tag) && !keepTags.contains(tag)) || isOverlay(tag) || (removeTags.contains(tag) && !keepTags.contains(tag)))) // remove private, overlay and PHI attributes, but not keepTags
       .via(modifyFlow( // modify, clear and insert
       modify(Tag.AccessionNumber, bytes => if (bytes.nonEmpty) createAccessionNumber(bytes) else bytes),
       modify(Tag.ConcatenationUID, createUid),
