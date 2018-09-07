@@ -28,12 +28,12 @@ import se.nimsa.dicom.data.{Tag, TagPath, VR}
 import se.nimsa.sbx.anonymization.AnonymizationUtil._
 import se.nimsa.sbx.dicom.DicomUtil._
 import se.nimsa.sbx.dicom.streams.DicomStreamUtil._
-import scala.reflect.runtime.universe
-
 
 import scala.collection.JavaConverters._
 
 object AnonymizationFlow {
+
+  private def hex2int (hex: Seq[String]): Seq[Int] = hex.map { h => Integer.parseInt(h, 16) }
 
 
   private def insert(tag: Int, mod: ByteString => ByteString) = TagModification.endsWith(TagPath.fromTag(tag), mod, insert = true)
@@ -211,7 +211,7 @@ object AnonymizationFlow {
     Tag.VisitComments
   )
 
-  val keepTags : Seq[Int] = Option(sliceboxConfig.getIntList("anonymization.keep-tags").asScala).getOrElse(Seq.empty).map {_.toInt}
+  val keepTags = hex2int(Option(sliceboxConfig.getStringList("anonymization.keep-tags").asScala).getOrElse(Seq.empty[String]))
 
   /**
     * From standard PS3.15 Table E.1-1
@@ -226,7 +226,7 @@ object AnonymizationFlow {
       .via(toUtf8Flow)
       .via(tagFilter(_ => true)(tagPath =>
         !tagPath.toList.map(_.tag).exists(tag =>
-          (isPrivate(tag) && !keepTags.contains(tag)) || isOverlay(tag) || (removeTags.contains(tag) && !keepTags.contains(tag)))) // remove private, overlay and PHI attributes, but not keepTags
+          (isPrivate(tag) && !keepTags.contains(tag)) || isOverlay(tag) || (removeTags.contains(tag) && !keepTags.contains(tag))))) // remove private, overlay and PHI attributes but keep keepTags
       .via(modifyFlow( // modify, clear and insert
       modify(Tag.AccessionNumber, bytes => if (bytes.nonEmpty) createAccessionNumber(bytes) else bytes),
       modify(Tag.ConcatenationUID, createUid),
