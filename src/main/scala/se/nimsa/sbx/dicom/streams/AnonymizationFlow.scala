@@ -37,7 +37,23 @@ object AnonymizationFlow {
 
 
   private def insert(tag: Int, mod: ByteString => ByteString) = TagModification.endsWith(TagPath.fromTag(tag), mod, insert = true)
+  private def maybe_insert(tag: Int, do_insert: Boolean, mod: ByteString => ByteString) :TagModification = {
+    if (do_insert)
+      TagModification.endsWith(TagPath.fromTag(tag), mod, insert = true)
+    else {
+      val dummytag = 196609
+      TagModification.endsWith(TagPath.fromTag(dummytag), mod, insert = false)
+    }
+  }
   private def modify(tag: Int, mod: ByteString => ByteString) = TagModification.endsWith(TagPath.fromTag(tag), mod, insert = false)
+  private def maybe_modify(tag: Int, do_insert: Boolean, mod: ByteString => ByteString) = {
+    if (do_insert)
+      TagModification.endsWith(TagPath.fromTag(tag), mod, insert = false)
+    else {
+      val dummytag = 196609
+      TagModification.endsWith(TagPath.fromTag(dummytag), mod, insert = false)
+    }
+  }
   private def clear(tag: Int) = TagModification.endsWith(TagPath.fromTag(tag), _ => ByteString.empty, insert = false)
 
   val appConfig: Config  = ConfigFactory.load()
@@ -227,6 +243,7 @@ object AnonymizationFlow {
       .via(tagFilter(_ => true)(tagPath =>
         !tagPath.toList.map(_.tag).exists(tag =>
           (isPrivate(tag) && !keepTags.contains(tag)) || isOverlay(tag) || (removeTags.contains(tag) && !keepTags.contains(tag))))) // remove private, overlay and PHI attributes but keep keepTags
+
       .via(modifyFlow( // modify, clear and insert
       modify(Tag.AccessionNumber, bytes => if (bytes.nonEmpty) createAccessionNumber(bytes) else bytes),
       modify(Tag.ConcatenationUID, createUid),
@@ -239,7 +256,7 @@ object AnonymizationFlow {
       modify(Tag.DoseReferenceUID, createUid),
       modify(Tag.FiducialUID, createUid),
       clear(Tag.FillerOrderNumberImagingServiceRequest),
-      modify(Tag.FrameOfReferenceUID, createUid),
+      maybe_modify(Tag.FrameOfReferenceUID, !keepTags.contains(Tag.FrameOfReferenceUID), createUid),
       modify(Tag.InstanceCreatorUID, createUid),
       modify(Tag.IrradiationEventUID, createUid),
       modify(Tag.LargePaletteColorLookupTableUID, createUid),
@@ -248,22 +265,22 @@ object AnonymizationFlow {
       modify(Tag.ObservationUID, createUid),
       modify(Tag.PaletteColorLookupTableUID, createUid),
       insert(Tag.PatientIdentityRemoved, _ => toAsciiBytes("YES", VR.CS)),
-      insert(Tag.PatientID, _ => createUid(null)),
+      maybe_insert(Tag.PatientID, !keepTags.contains(Tag.PatientID),_ => createUid(null)),
       insert(Tag.PatientName, _ => createUid(null)),
       clear(Tag.PlacerOrderNumberImagingServiceRequest),
-      modify(Tag.ReferencedFrameOfReferenceUID, createUid),
+      maybe_modify(Tag.ReferencedFrameOfReferenceUID, !keepTags.contains(Tag.ReferencedFrameOfReferenceUID),createUid),
       modify(Tag.ReferencedGeneralPurposeScheduledProcedureStepTransactionUID, createUid),
       modify(Tag.ReferencedObservationUIDTrial, createUid),
-      modify(Tag.ReferencedSOPInstanceUID, createUid),
+      maybe_modify(Tag.ReferencedSOPInstanceUID, !keepTags.contains(Tag.ReferencedSOPInstanceUID), createUid),
       modify(Tag.ReferencedSOPInstanceUIDInFile, createUid),
       clear(Tag.ReferringPhysicianName),
       modify(Tag.RelatedFrameOfReferenceUID, createUid),
       modify(Tag.RequestedSOPInstanceUID, createUid),
-      insert(Tag.SeriesInstanceUID, _ => createUid(null)),
-      insert(Tag.SOPInstanceUID, createUid),
+      maybe_insert(Tag.SeriesInstanceUID, !keepTags.contains(Tag.SeriesInstanceUID),_ => createUid(null)),
+      maybe_insert(Tag.SOPInstanceUID, !keepTags.contains(Tag.SOPInstanceUID), createUid),
       modify(Tag.StorageMediaFileSetUID, createUid),
       clear(Tag.StudyID),
-      insert(Tag.StudyInstanceUID, _ => createUid(null)),
+      maybe_insert(Tag.StudyInstanceUID, !keepTags.contains(Tag.StudyInstanceUID), _ => createUid(null)),
       modify(Tag.SynchronizationFrameOfReferenceUID, createUid),
       modify(Tag.TargetUID, createUid),
       modify(Tag.TemplateExtensionCreatorUID, createUid),

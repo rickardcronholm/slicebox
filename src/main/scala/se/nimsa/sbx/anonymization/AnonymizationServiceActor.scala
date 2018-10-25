@@ -19,19 +19,25 @@ package se.nimsa.sbx.anonymization
 import akka.actor.{Actor, Props, Stash}
 import akka.event.{Logging, LoggingReceive}
 import akka.pattern.pipe
+import com.typesafe.config.{Config, ConfigFactory}
 import se.nimsa.dicom.data.Tag
 import se.nimsa.sbx.anonymization.AnonymizationProtocol._
 import se.nimsa.sbx.app.GeneralProtocol.ImagesDeleted
 import se.nimsa.sbx.util.SequentialPipeToSupport
-
 import scala.concurrent.{ExecutionContext, Future}
+import scala.collection.JavaConverters._
 
 class AnonymizationServiceActor(anonymizationDao: AnonymizationDAO, purgeEmptyAnonymizationKeys: Boolean)
                                (implicit ec: ExecutionContext) extends Actor with Stash with SequentialPipeToSupport {
 
   import AnonymizationUtil._
 
+  val appConfig: Config  = ConfigFactory.load()
+  val sliceboxConfig: Config = appConfig.getConfig("slicebox")
+
   val log = Logging(context.system, this)
+
+  private def hex2int (hex: Seq[String]): Seq[Int] = hex.map { h => Integer.parseInt(h, 16) }
 
   override def preStart {
     context.system.eventStream.subscribe(context.self, classOf[ImagesDeleted])
@@ -96,6 +102,8 @@ class AnonymizationServiceActor(anonymizationDao: AnonymizationDAO, purgeEmptyAn
             val seriesKeys = seriesInstanceUIDMaybe.map(seriesInstanceUID => studyKeys.filter(_.seriesInstanceUID == seriesInstanceUID)).getOrElse(Seq.empty)
             val seriesKeyMaybe = seriesKeys.headOption
 
+            val keepTags = hex2int(Option(sliceboxConfig.getStringList("anonymization.keep-tags").asScala).getOrElse(Seq.empty[String]))
+
             seriesKeyMaybe
               .map(key => Future.successful(applyTagValues(key, tagValues)))
               .getOrElse {
@@ -103,19 +111,35 @@ class AnonymizationServiceActor(anonymizationDao: AnonymizationDAO, purgeEmptyAn
                 val patientName = patientNameMaybe.getOrElse("")
                 val anonPatientName = patientKeyMaybe.map(_.anonPatientName).getOrElse(createAnonymousPatientName(patientSexMaybe, patientAgeMaybe))
                 val patientID = patientIDMaybe.getOrElse("")
-                val anonPatientID = patientKeyMaybe.map(_.anonPatientID).getOrElse(createUid(""))
+                var anonPatientID = ""
+                if (keepTags.contains(Tag.PatientID))
+                    anonPatientID = patientID
+                else
+                  anonPatientID = patientKeyMaybe.map(_.anonPatientID).getOrElse(createUid(""))
                 val patientBirthDate = patientBirthDateMaybe.getOrElse("")
                 val studyInstanceUID = studyInstanceUIDMaybe.getOrElse("")
-                val anonStudyInstanceUID = studyKeyMaybe.map(_.anonStudyInstanceUID).getOrElse(if (studyInstanceUID.isEmpty) "" else createUid(""))
+                var anonStudyInstanceUID = ""
+                if (keepTags.contains(Tag.StudyInstanceUID))
+                  anonStudyInstanceUID = studyInstanceUID
+                else
+                  anonStudyInstanceUID = studyKeyMaybe.map(_.anonStudyInstanceUID).getOrElse(if (studyInstanceUID.isEmpty) "" else createUid(""))
                 val studyDescription = studyDescriptionMaybe.getOrElse("")
                 val studyID = studyIDMaybe.getOrElse("")
                 val accessionNumber = accessionNumberMaybe.getOrElse("")
                 val seriesInstanceUID = seriesInstanceUIDMaybe.getOrElse("")
-                val anonSeriesInstanceUID = seriesKeyMaybe.map(_.anonSeriesInstanceUID).getOrElse(if (seriesInstanceUID.isEmpty) "" else createUid(""))
+                var anonSeriesInstanceUID = ""
+                if (keepTags.contains(Tag.SeriesInstanceUID))
+                  anonSeriesInstanceUID = seriesInstanceUID
+                else
+                  anonSeriesInstanceUID = seriesKeyMaybe.map(_.anonSeriesInstanceUID).getOrElse(if (seriesInstanceUID.isEmpty) "" else createUid(""))
                 val seriesDescription = seriesDescriptionMaybe.getOrElse("")
                 val protocolName = protocolNameMaybe.getOrElse("")
                 val frameOfReferenceUID = frameOfReferenceUIDMaybe.getOrElse("")
-                val anonFrameOfReferenceUID = seriesKeyMaybe.map(_.anonFrameOfReferenceUID).getOrElse(if (frameOfReferenceUID.isEmpty) "" else createUid(frameOfReferenceUID))
+                var anonFrameOfReferenceUID = ""
+                if (keepTags.contains(Tag.FrameOfReferenceUID))
+                  anonFrameOfReferenceUID = frameOfReferenceUID
+                else
+                  anonFrameOfReferenceUID = seriesKeyMaybe.map(_.anonFrameOfReferenceUID).getOrElse(if (frameOfReferenceUID.isEmpty) "" else createUid(frameOfReferenceUID))
 
                 val anonKey = AnonymizationKey(-1, System.currentTimeMillis,
                   patientName, anonPatientName, patientID, anonPatientID, patientBirthDate,
